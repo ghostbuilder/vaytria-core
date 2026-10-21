@@ -106,6 +106,14 @@ def main():
             # must not turn a bulk fixture into an unrelated 30-second timeout.
             for _ in range(101):
                 assert len(miner.rpc('generatetoaddress', [1, miner_address])) == 1
+            work_salts = []
+            for height in [100, 101]:
+                coinbase = miner.rpc('getblock', [miner.rpc('getblockhash', [height]), 2])['tx'][0]
+                script = bytes.fromhex(coinbase['vin'][0]['coinbase'])
+                assert len(script) >= 35 and script[-33] == 32, 'Fresh 32-byte mining work salt is absent.'
+                work_salts.append(script[-32:])
+            assert work_salts[0] != work_salts[1], 'Mining RPCs repeated their coinbase work salt.'
+            checks.append('separate native mining RPCs append distinct 32-byte coinbase work salts')
             wait_for(lambda: buyer.rpc('getblockcount') == 101)
             miner.rpc('walletpassphrase', [secret, 30], wallet=True)
             txid = miner.rpc('sendtoaddress', [buyer_address, '1.25'], wallet=True)

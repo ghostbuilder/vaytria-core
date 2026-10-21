@@ -13,7 +13,7 @@ import tarfile
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = '0.1.1-alpha'
+VERSION = '0.1.2-alpha'
 
 
 def digest(data): return hashlib.sha256(data).hexdigest()

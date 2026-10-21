@@ -342,6 +342,45 @@ index 09d2df6..f7488c3 100644
      {ChainType::MAIN, QAPP_APP_NAME_DEFAULT, 0, 0},
      {ChainType::TESTNET, QAPP_APP_NAME_TESTNET, 70, 30},
      {ChainType::TESTNET4, QAPP_APP_NAME_TESTNET4, 70, 30},
+diff --git a/src/rpc/mining.cpp b/src/rpc/mining.cpp
+index 043e11f..aa2a6ad 100644
+--- a/src/rpc/mining.cpp
++++ b/src/rpc/mining.cpp
+@@ -25,6 +25,7 @@
+ #include <node/warnings.h>
+ #include <policy/ephemeral_policy.h>
+ #include <pow.h>
++#include <random.h>
+ #include <rpc/blockchain.h>
+ #include <rpc/mining.h>
+ #include <rpc/server.h>
+@@ -45,6 +46,7 @@
+ 
+ #include <cstdint>
+ #include <memory>
++#include <vector>
+ 
+ using interfaces::BlockRef;
+ using interfaces::BlockTemplate;
+@@ -168,8 +170,17 @@ static UniValue generateBlocks(ChainstateManager& chainman, Mining& miner, const
+         std::unique_ptr<BlockTemplate> block_template(miner.createNewBlock({ .coinbase_output_script = coinbase_output_script, .include_dummy_extranonce = true }, /*cooldown=*/false));
+         CHECK_NONFATAL(block_template);
+ 
++        // Short, repeated RPC calls must search fresh work even when the tip,
++        // payout script and timestamp are unchanged. Coinbase extranonces are
++        // ordinary Bitcoin-valid mining data; no consensus rule is changed.
++        CBlock block{block_template->getBlock()};
++        CMutableTransaction coinbase{*block.vtx[0]};
++        const uint256 extra_nonce{GetRandHash()};
++        coinbase.vin[0].scriptSig << std::vector<unsigned char>(extra_nonce.begin(), extra_nonce.end());
++        block.vtx[0] = MakeTransactionRef(std::move(coinbase));
++
+         std::shared_ptr<const CBlock> block_out;
+-        if (!GenerateBlock(chainman, block_template->getBlock(), nMaxTries, block_out, /*process_new_block=*/true)) {
++        if (!GenerateBlock(chainman, std::move(block), nMaxTries, block_out, /*process_new_block=*/true)) {
+             break;
+         }
+ 
 diff --git a/src/test/CMakeLists.txt b/src/test/CMakeLists.txt
 index 7d9dccb..0074454 100644
 --- a/src/test/CMakeLists.txt

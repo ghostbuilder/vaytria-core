@@ -23,6 +23,12 @@ Windows packages use native executables; WSL is not required. The packaged menu
 client includes its Python runtime. Linux users need Python 3. A build in progress
 or a missing release asset is not a qualified downloadable release.
 
+CPU mining correction: version 0.1.2 adds fresh coinbase work data for every
+bounded native generation request. Earlier packages can repeat a nonce range
+within a second and waste hashing work. They remain experimental node/wallet
+previews; use the corrected mining release once its platform checks pass.
+The correction does not change the genesis, supply, reward or consensus rules.
+
 ## Network identity
 
 - Genesis: `00000000c59f648b04817dd53eb907d6ab78dfef3cf35a6c4e4bbca3cac3af22`

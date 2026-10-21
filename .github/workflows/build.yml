@@ -51,7 +51,7 @@ jobs:
       - name: Package checked binaries
         run: python3 scripts/package.py --platform linux-x86_64 --bin-dir core/build/bin
       - name: Check extracted package startup without live mining
-        run: python3 scripts/smoke-package.py dist/vaytria-0.1.1-alpha-linux-x86_64.tar.gz
+        run: python3 scripts/smoke-package.py dist/vaytria-0.1.2-alpha-linux-x86_64.tar.gz
       - name: Attach draft build assets
         env:
           GH_TOKEN: ${{ github.token }}
@@ -100,6 +100,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Wallet/miner checks failed' }
       - name: Retain private diagnostic binaries after a successful compilation
         if: ${{ always() && steps.native_build.outcome == 'success' }}
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
           BUILD_TAG: ${{ needs.draft.outputs.tag }}
@@ -124,7 +125,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Package check failed' }
       - name: Check extracted native package startup without live mining
         run: |
-          python scripts/smoke-package.py dist/vaytria-0.1.1-alpha-win64.zip
+          python scripts/smoke-package.py dist/vaytria-0.1.2-alpha-win64.zip
           if ($LASTEXITCODE -ne 0) { throw 'Packaged startup check failed' }
       - name: Attach draft build assets
         env:
