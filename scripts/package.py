@@ -40,6 +40,23 @@ def main():
         files[name] = (ROOT / name).read_bytes()
     files['vaytria.py'] = (ROOT / 'client/vaytria.py').read_bytes()
     files['checks/integration.json'] = (ROOT / 'reports/integration.json').read_bytes()
+    for dependency, notice in [('secp256k1', 'COPYING'), ('leveldb', 'LICENSE'),
+                               ('crc32c', 'LICENSE'), ('minisketch', 'LICENSE'), ('crypto/ctaes', 'COPYING')]:
+        files['licenses/' + dependency.replace('/', '-') + '.txt'] = (ROOT / 'core/src' / dependency / notice).read_bytes()
+    univalue = (ROOT / 'core/src/univalue/include/univalue.h').read_text().splitlines()[:4]
+    files['licenses/UniValue.txt'] = ('\n'.join(univalue) + '\n\n').encode() + files['COPYING']
+    if windows:
+        notices = list((ROOT / 'core/build/vcpkg_installed/x64-windows-static/share').glob('*/copyright'))
+        assert any(path.parent.name == 'libevent' for path in notices), 'Bundled libevent copyright is required.'
+        for path in notices:
+            files['licenses/vcpkg-' + path.parent.name + '.txt'] = path.read_bytes()
+    else:
+        notices = []
+        for pattern in ['libevent*/copyright', 'libboost*/copyright', 'libsqlite3*/copyright']:
+            notices.extend(Path('/usr/share/doc').glob(pattern))
+        assert any(path.parent.name.startswith('libevent') for path in notices), 'libevent copyright is required.'
+        for path in notices:
+            files['licenses/system-' + path.parent.name + '.txt'] = path.read_bytes()
     if windows:
         frozen = Path(args.frozen_client)
         subprocess.run([str(frozen.resolve()), '--help'], stdout=subprocess.DEVNULL, check=True)
