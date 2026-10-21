@@ -1,0 +1,530 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 6109639..6ecb928 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -26,12 +26,12 @@ get_directory_property(precious_variables CACHE_VARIABLES)
+ #=============================
+ # Project / Package metadata
+ #=============================
+-set(CLIENT_NAME "Bitcoin Core")
++set(CLIENT_NAME "Vaytria Core")
+ set(CLIENT_VERSION_MAJOR 31)
+ set(CLIENT_VERSION_MINOR 1)
+ set(CLIENT_VERSION_BUILD 0)
+ set(CLIENT_VERSION_RC 0)
+-set(CLIENT_VERSION_IS_RELEASE "true")
++set(CLIENT_VERSION_IS_RELEASE "false")
+ set(COPYRIGHT_YEAR "2026")
+ 
+ # During the enabling of the CXX and CXXOBJ languages, we modify
+@@ -63,7 +63,7 @@ if(CLIENT_VERSION_RC GREATER 0)
+ endif()
+ 
+ set(COPYRIGHT_HOLDERS "The %s developers")
+-set(COPYRIGHT_HOLDERS_FINAL "The ${CLIENT_NAME} developers")
++set(COPYRIGHT_HOLDERS_FINAL "The Bitcoin Core developers and Vaytria contributors")
+ set(CLIENT_BUGREPORT "https://github.com/bitcoin/bitcoin/issues")
+ 
+ #=============================
+diff --git a/src/bitcoin-cli.cpp b/src/bitcoin-cli.cpp
+index 909ed09..3007311 100644
+--- a/src/bitcoin-cli.cpp
++++ b/src/bitcoin-cli.cpp
+@@ -434,6 +434,8 @@ private:
+             return " signet";
+         case ChainType::REGTEST:
+             return " regtest";
++        case ChainType::VAYTRIA:
++            return " vaytria";
+         case ChainType::MAIN:
+             return "";
+         }
+diff --git a/src/bitcoind.cpp b/src/bitcoind.cpp
+index 323e757..bd3b7fd 100644
+--- a/src/bitcoind.cpp
++++ b/src/bitcoind.cpp
+@@ -123,6 +123,17 @@ static bool ParseArgs(NodeContext& node, int argc, char* argv[])
+         return InitError(error->message, error->details);
+     }
+ 
++    // Prevent this development binary from joining Bitcoin public networks.
++    if (args.GetChainType() != ChainType::VAYTRIA && args.GetChainType() != ChainType::REGTEST) {
++        return InitError(Untranslated("Vaytria supports only -chain=vaytria and -regtest. Bitcoin public networks are disabled."));
++    }
++    if (args.GetChainType() == ChainType::VAYTRIA) {
++        // Local development defaults. Public operation requires explicit configuration.
++        args.SoftSetArg("-bind", "127.0.0.1:31444");
++        args.SoftSetBoolArg("-discover", false);
++        args.SoftSetBoolArg("-listenonion", false);
++    }
++
+     // Error out when loose non-argument tokens are encountered on command line
+     for (int i = 1; i < argc; i++) {
+         if (!IsSwitchChar(argv[i][0])) {
+@@ -147,8 +158,8 @@ static bool ProcessInitCommands(interfaces::Init& init, ArgsManager& args)
+             strUsage += FormatParagraph(LicenseInfo());
+         } else {
+             strUsage += "\n"
+-                "The " CLIENT_NAME " daemon (bitcoind) is a headless program that connects to the Bitcoin network to validate and relay transactions and blocks, as well as relaying addresses.\n\n"
+-                "It provides the backbone of the Bitcoin network and its RPC, REST and ZMQ services can provide various transaction, block and address-related services.\n\n"
++                "The " CLIENT_NAME " daemon (bitcoind) is a headless program that connects to the Vaytria network to validate and relay transactions and blocks, as well as relaying addresses.\n\n"
++                "It provides the backbone of the Vaytria network and its RPC, REST and ZMQ services can provide various transaction, block and address-related services.\n\n"
+                 "There is an optional wallet component which provides transaction services.\n\n"
+                 "It can be used in a headless environment or as part of a server setup.\n"
+                 "\n"
+diff --git a/src/chainparams.cpp b/src/chainparams.cpp
+index 32c3bff..b58a758 100644
+--- a/src/chainparams.cpp
++++ b/src/chainparams.cpp
+@@ -117,6 +117,8 @@ const CChainParams &Params() {
+ std::unique_ptr<const CChainParams> CreateChainParams(const ArgsManager& args, const ChainType chain)
+ {
+     switch (chain) {
++    case ChainType::VAYTRIA:
++        return CChainParams::Vaytria();
+     case ChainType::MAIN:
+         return CChainParams::Main();
+     case ChainType::TESTNET:
+diff --git a/src/chainparamsbase.cpp b/src/chainparamsbase.cpp
+index d816d1a..195dc21 100644
+--- a/src/chainparamsbase.cpp
++++ b/src/chainparamsbase.cpp
+@@ -13,7 +13,7 @@
+ 
+ void SetupChainParamsBaseOptions(ArgsManager& argsman)
+ {
+-    argsman.AddArg("-chain=<chain>", "Use the chain <chain> (default: main). Allowed values: " LIST_CHAIN_NAMES, ArgsManager::ALLOW_ANY, OptionsCategory::CHAINPARAMS);
++    argsman.AddArg("-chain=<chain>", "Use the chain <chain> (default: vaytria). Allowed values: " LIST_CHAIN_NAMES, ArgsManager::ALLOW_ANY, OptionsCategory::CHAINPARAMS);
+     argsman.AddArg("-regtest", "Enter regression test mode, which uses a special chain in which blocks can be solved instantly. "
+                  "This is intended for regression testing tools and app development. Equivalent to -chain=regtest.", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
+     argsman.AddArg("-testactivationheight=name@height.", "Set the activation height of 'name' (segwit, bip34, dersig, cltv, csv). (regtest-only)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
+@@ -40,6 +40,8 @@ const CBaseChainParams& BaseParams()
+ std::unique_ptr<CBaseChainParams> CreateBaseChainParams(const ChainType chain)
+ {
+     switch (chain) {
++    case ChainType::VAYTRIA:
++        return std::make_unique<CBaseChainParams>("vaytria", 31443);
+     case ChainType::MAIN:
+         return std::make_unique<CBaseChainParams>("", 8332);
+     case ChainType::TESTNET:
+diff --git a/src/chainparamsbase.h b/src/chainparamsbase.h
+index 1407f19..ee84b84 100644
+--- a/src/chainparamsbase.h
++++ b/src/chainparamsbase.h
+@@ -52,6 +52,6 @@ const CBaseChainParams& BaseParams();
+ void SelectBaseParams(ChainType chain);
+ 
+ /** List of possible chain / network names  */
+-#define LIST_CHAIN_NAMES "main, test, testnet4, signet, regtest"
++#define LIST_CHAIN_NAMES "vaytria, main, test, testnet4, signet, regtest"
+ 
+ #endif // BITCOIN_CHAINPARAMSBASE_H
+diff --git a/src/clientversion.cpp b/src/clientversion.cpp
+index 8661011..7f89acc 100644
+--- a/src/clientversion.cpp
++++ b/src/clientversion.cpp
+@@ -21,7 +21,7 @@ using util::Join;
+  * for both bitcoind and bitcoin-qt, to make it harder for attackers to
+  * target servers or GUI users specifically.
+  */
+-const std::string UA_NAME("Satoshi");
++const std::string UA_NAME("Vaytria");
+ 
+ 
+ #include <bitcoin-build-info.h>
+diff --git a/src/common/args.cpp b/src/common/args.cpp
+index 5c8589c..c258192 100644
+--- a/src/common/args.cpp
++++ b/src/common/args.cpp
+@@ -141,7 +141,7 @@ std::set<std::string> ArgsManager::GetUnsuitableSectionOnlyArgs() const
+     if (m_network.empty()) return std::set<std::string> {};
+ 
+     // if it's okay to use the default section for this network, don't worry
+-    if (m_network == ChainTypeToString(ChainType::MAIN)) return std::set<std::string> {};
++    if (m_network == ChainTypeToString(ChainType::MAIN) || m_network == ChainTypeToString(ChainType::VAYTRIA)) return std::set<std::string> {};
+ 
+     for (const auto& arg : m_network_only_args) {
+         if (OnlyHasDefaultSectionSetting(m_settings, m_network, SettingName(arg))) {
+@@ -160,6 +160,7 @@ std::list<SectionInfo> ArgsManager::GetUnrecognizedSections() const
+         ChainTypeToString(ChainType::TESTNET),
+         ChainTypeToString(ChainType::TESTNET4),
+         ChainTypeToString(ChainType::MAIN),
++        ChainTypeToString(ChainType::VAYTRIA),
+     };
+ 
+     LOCK(cs_args);
+@@ -757,18 +758,18 @@ bool HasTestOption(const ArgsManager& args, const std::string& test_option)
+ fs::path GetDefaultDataDir()
+ {
+     // Windows:
+-    //   old: C:\Users\Username\AppData\Roaming\Bitcoin
+-    //   new: C:\Users\Username\AppData\Local\Bitcoin
+-    // macOS: ~/Library/Application Support/Bitcoin
+-    // Unix-like: ~/.bitcoin
++    //   old: C:\Users\Username\AppData\Roaming\Vaytria
++    //   new: C:\Users\Username\AppData\Local\Vaytria
++    // macOS: ~/Library/Application Support/Vaytria
++    // Unix-like: ~/.vaytria-fresh
+ #ifdef WIN32
+     // Windows
+     // Check for existence of datadir in old location and keep it there
+-    fs::path legacy_path = GetSpecialFolderPath(CSIDL_APPDATA) / "Bitcoin";
++    fs::path legacy_path = GetSpecialFolderPath(CSIDL_APPDATA) / "VaytriaFresh";
+     if (fs::exists(legacy_path)) return legacy_path;
+ 
+     // Otherwise, fresh installs can start in the new, "proper" location
+-    return GetSpecialFolderPath(CSIDL_LOCAL_APPDATA) / "Bitcoin";
++    return GetSpecialFolderPath(CSIDL_LOCAL_APPDATA) / "VaytriaFresh";
+ #else
+     fs::path pathRet;
+     char* pszHome = getenv("HOME");
+@@ -778,10 +779,10 @@ fs::path GetDefaultDataDir()
+         pathRet = fs::path(pszHome);
+ #ifdef __APPLE__
+     // macOS
+-    return pathRet / "Library/Application Support/Bitcoin";
++    return pathRet / "Library/Application Support/Vaytria";
+ #else
+     // Unix-like
+-    return pathRet / ".bitcoin";
++    return pathRet / ".vaytria-fresh";
+ #endif
+ #endif
+ }
+@@ -848,12 +849,12 @@ std::variant<ChainType, std::string> ArgsManager::GetChainArg() const
+     if (fSigNet) return ChainType::SIGNET;
+     if (fTestNet) return ChainType::TESTNET;
+     if (fTestNet4) return ChainType::TESTNET4;
+-    return ChainType::MAIN;
++    return ChainType::VAYTRIA;
+ }
+ 
+ bool ArgsManager::UseDefaultSection(const std::string& arg) const
+ {
+-    return m_network == ChainTypeToString(ChainType::MAIN) || !m_network_only_args.contains(arg);
++    return m_network == ChainTypeToString(ChainType::MAIN) || m_network == ChainTypeToString(ChainType::VAYTRIA) || !m_network_only_args.contains(arg);
+ }
+ 
+ common::SettingsValue ArgsManager::GetSetting(const std::string& arg) const
+diff --git a/src/kernel/chainparams.cpp b/src/kernel/chainparams.cpp
+index 64809a7..e1a90e0 100644
+--- a/src/kernel/chainparams.cpp
++++ b/src/kernel/chainparams.cpp
+@@ -205,6 +205,54 @@ public:
+     }
+ };
+ 
++
++/** Vaytria fresh launch candidate network; no premine. Bitcoin monetary and PoW rules are inherited.
++ * Historical activation hashes and trust assumptions cannot carry to a new chain.
++ */
++class CVaytriaParams : public CMainParams {
++public:
++    CVaytriaParams() {
++        m_chain_type = ChainType::VAYTRIA;
++        consensus.script_flag_exceptions.clear();
++        consensus.BIP34Height = 1;
++        consensus.BIP34Hash = uint256{};
++        consensus.BIP65Height = 1;
++        consensus.BIP66Height = 1;
++        consensus.CSVHeight = 1;
++        consensus.SegwitHeight = 1;
++        consensus.MinBIP9WarningHeight = 0;
++        consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].nStartTime = Consensus::BIP9Deployment::ALWAYS_ACTIVE;
++        consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
++        consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].min_activation_height = 0;
++        consensus.nMinimumChainWork = uint256{};
++        consensus.defaultAssumeValid = uint256{};
++
++        pchMessageStart = {0xa1, 0xd7, 0xf2, 0xc9};
++        nDefaultPort = 31444;
++        m_assumed_blockchain_size = 0;
++        m_assumed_chain_state_size = 0;
++        vSeeds.clear();
++        vFixedSeeds.clear();
++        m_assumeutxo_data.clear();
++
++        base58Prefixes[PUBKEY_ADDRESS] = {90};
++        base58Prefixes[SCRIPT_ADDRESS] = {139};
++        base58Prefixes[SECRET_KEY] = {218};
++        base58Prefixes[EXT_PUBLIC_KEY] = {0x05, 0xa6, 0x3c, 0x19};
++        base58Prefixes[EXT_SECRET_KEY] = {0x05, 0xa6, 0x36, 0xd5};
++        bech32_hrp = "vtr";
++
++        // The genesis output is unspendable; there is no founder allocation.
++        genesis = CreateGenesisBlock("Vaytria fresh launch v2 - no premine or founder allocation",
++            CScript() << OP_RETURN << "56617974726961206c61756e63682067656e65736973"_hex,
++            1792551929, 1422232236, 0x1d00ffff, 1, 50 * COIN);
++        consensus.hashGenesisBlock = genesis.GetHash();
++        assert(consensus.hashGenesisBlock == uint256{"00000000c59f648b04817dd53eb907d6ab78dfef3cf35a6c4e4bbca3cac3af22"});
++        assert(genesis.hashMerkleRoot == uint256{"ac5e6cad4abf741423411dec07e284fe710f815d4ec2fd1bab286b3570192f3c"});
++        chainTxData = ChainTxData{.nTime = 1792551929, .tx_count = 1, .dTxRate = 0};
++    }
++};
++
+ /**
+  * Testnet (v3): public test network which is reset from time to time.
+  */
+@@ -698,6 +746,11 @@ std::unique_ptr<const CChainParams> CChainParams::RegTest(const RegTestOptions&
+     return std::make_unique<const CRegTestParams>(options);
+ }
+ 
++std::unique_ptr<const CChainParams> CChainParams::Vaytria()
++{
++    return std::make_unique<const CVaytriaParams>();
++}
++
+ std::unique_ptr<const CChainParams> CChainParams::Main()
+ {
+     return std::make_unique<const CMainParams>();
+@@ -726,13 +779,16 @@ std::vector<int> CChainParams::GetAvailableSnapshotHeights() const
+ 
+ std::optional<ChainType> GetNetworkForMagic(const MessageStartChars& message)
+ {
++    const auto vaytria_msg = CChainParams::Vaytria()->MessageStart();
+     const auto mainnet_msg = CChainParams::Main()->MessageStart();
+     const auto testnet_msg = CChainParams::TestNet()->MessageStart();
+     const auto testnet4_msg = CChainParams::TestNet4()->MessageStart();
+     const auto regtest_msg = CChainParams::RegTest({})->MessageStart();
+     const auto signet_msg = CChainParams::SigNet({})->MessageStart();
+ 
+-    if (std::ranges::equal(message, mainnet_msg)) {
++    if (std::ranges::equal(message, vaytria_msg)) {
++        return ChainType::VAYTRIA;
++    } else if (std::ranges::equal(message, mainnet_msg)) {
+         return ChainType::MAIN;
+     } else if (std::ranges::equal(message, testnet_msg)) {
+         return ChainType::TESTNET;
+diff --git a/src/kernel/chainparams.h b/src/kernel/chainparams.h
+index f7209be..1f39518 100644
+--- a/src/kernel/chainparams.h
++++ b/src/kernel/chainparams.h
+@@ -95,7 +95,7 @@ public:
+     /** Default value for -checkmempool and -checkblockindex argument */
+     bool DefaultConsistencyChecks() const { return fDefaultConsistencyChecks; }
+     /** If this chain is exclusively used for testing */
+-    bool IsTestChain() const { return m_chain_type != ChainType::MAIN; }
++    bool IsTestChain() const { return m_chain_type != ChainType::MAIN && m_chain_type != ChainType::VAYTRIA; }
+     /** If this chain allows time to be mocked */
+     bool IsMockableChain() const { return m_is_mockable_chain; }
+     uint64_t PruneAfterHeight() const { return nPruneAfterHeight; }
+@@ -157,6 +157,7 @@ public:
+     static std::unique_ptr<const CChainParams> RegTest(const RegTestOptions& options);
+     static std::unique_ptr<const CChainParams> SigNet(const SigNetOptions& options);
+     static std::unique_ptr<const CChainParams> Main();
++    static std::unique_ptr<const CChainParams> Vaytria();
+     static std::unique_ptr<const CChainParams> TestNet();
+     static std::unique_ptr<const CChainParams> TestNet4();
+ 
+diff --git a/src/qt/guiutil.cpp b/src/qt/guiutil.cpp
+index 1619227..f0592b5 100644
+--- a/src/qt/guiutil.cpp
++++ b/src/qt/guiutil.cpp
+@@ -110,6 +110,9 @@ static std::string DummyAddress(const CChainParams &params)
+ {
+     std::string addr;
+     switch (params.GetChainType()) {
++    case ChainType::VAYTRIA:
++        addr = "vay1p35yvjel7srp783ztf8v6jdra7dhfzk5jaun8xz2qp6ws7z80n4tqinvalid";
++        break;
+     case ChainType::MAIN:
+         addr = "bc1p35yvjel7srp783ztf8v6jdra7dhfzk5jaun8xz2qp6ws7z80n4tq2jku9f";
+         break;
+diff --git a/src/qt/networkstyle.cpp b/src/qt/networkstyle.cpp
+index 09d2df6..f7488c3 100644
+--- a/src/qt/networkstyle.cpp
++++ b/src/qt/networkstyle.cpp
+@@ -17,6 +17,7 @@ static const struct {
+     const int iconColorHueShift;
+     const int iconColorSaturationReduction;
+ } network_styles[] = {
++    {ChainType::VAYTRIA, "Vaytria-Qt", 0, 0},
+     {ChainType::MAIN, QAPP_APP_NAME_DEFAULT, 0, 0},
+     {ChainType::TESTNET, QAPP_APP_NAME_TESTNET, 70, 30},
+     {ChainType::TESTNET4, QAPP_APP_NAME_TESTNET4, 70, 30},
+diff --git a/src/test/CMakeLists.txt b/src/test/CMakeLists.txt
+index 7d9dccb..0074454 100644
+--- a/src/test/CMakeLists.txt
++++ b/src/test/CMakeLists.txt
+@@ -9,6 +9,7 @@ add_executable(test_bitcoin
+   addrman_tests.cpp
+   allocator_tests.cpp
+   amount_tests.cpp
++  vaytria_tests.cpp
+   argsman_tests.cpp
+   arith_uint256_tests.cpp
+   banman_tests.cpp
+diff --git a/src/test/argsman_tests.cpp b/src/test/argsman_tests.cpp
+index e91ae5e..ca08765 100644
+--- a/src/test/argsman_tests.cpp
++++ b/src/test/argsman_tests.cpp
+@@ -658,10 +658,10 @@ BOOST_AUTO_TEST_CASE(util_GetChainTypeString)
+     std::string error;
+ 
+     BOOST_CHECK(test_args.ParseParameters(0, argv_testnet4, error));
+-    BOOST_CHECK_EQUAL(test_args.GetChainTypeString(), "main");
++    BOOST_CHECK_EQUAL(test_args.GetChainTypeString(), "vaytria");
+ 
+     BOOST_CHECK(test_args.ParseParameters(0, argv_testnet4, error));
+-    BOOST_CHECK_EQUAL(test_args.GetChainTypeString(), "main");
++    BOOST_CHECK_EQUAL(test_args.GetChainTypeString(), "vaytria");
+ 
+     BOOST_CHECK(test_args.ParseParameters(2, argv_testnet4, error));
+     BOOST_CHECK_EQUAL(test_args.GetChainTypeString(), "testnet4");
+@@ -1019,7 +1019,7 @@ BOOST_FIXTURE_TEST_CASE(util_ChainMerge, ChainMergeTestingSetup)
+     // Results file is formatted like:
+     //
+     //   <input> || <output>
+-    BOOST_CHECK_EQUAL(out_sha_hex, "c0e33aab0c74e040ddcee9edad59e8148d8e1cacb3cccd9ea1a1f485cb6bad21");
++    BOOST_CHECK_EQUAL(out_sha_hex, "e0e55eef044ac5a01e968648b39329f08dd5bb865d4dd4b7d8c2055e2127ae66");
+ }
+ 
+ BOOST_AUTO_TEST_CASE(util_ReadWriteSettings)
+diff --git a/src/test/vaytria_tests.cpp b/src/test/vaytria_tests.cpp
+new file mode 100644
+index 0000000..a74040e
+--- /dev/null
++++ b/src/test/vaytria_tests.cpp
+@@ -0,0 +1,106 @@
++// Copyright (c) 2026 Vaytria contributors
++// Distributed under the MIT software license; see COPYING.
++
++#include <chainparams.h>
++#include <chainparamsbase.h>
++#include <common/args.h>
++#include <consensus/amount.h>
++#include <key_io.h>
++#include <pow.h>
++#include <test/util/setup_common.h>
++#include <util/chaintype.h>
++#include <validation.h>
++
++#include <boost/test/unit_test.hpp>
++
++BOOST_FIXTURE_TEST_SUITE(vaytria_tests, BasicTestingSetup)
++
++BOOST_AUTO_TEST_CASE(independent_network_and_valid_genesis)
++{
++    const auto vaytria = CChainParams::Vaytria();
++    const auto bitcoin = CChainParams::Main();
++    BOOST_CHECK(vaytria->GetChainType() == ChainType::VAYTRIA);
++    BOOST_CHECK_EQUAL(vaytria->GetChainTypeString(), "vaytria");
++    BOOST_CHECK(!vaytria->IsTestChain());
++    BOOST_CHECK(vaytria->GenesisBlock().GetHash() != bitcoin->GenesisBlock().GetHash());
++    BOOST_CHECK_EQUAL(vaytria->GenesisBlock().GetHash().ToString(), "00000000c59f648b04817dd53eb907d6ab78dfef3cf35a6c4e4bbca3cac3af22");
++    BOOST_CHECK(vaytria->GenesisBlock().GetHash() != uint256{"00000000f2301dd76f7a601e7761be5011b4bc9bf69f24e6db7d962f98874a65"});
++    BOOST_CHECK(vaytria->GenesisBlock().hashPrevBlock.IsNull());
++    BOOST_CHECK(CheckProofOfWork(vaytria->GenesisBlock().GetHash(), vaytria->GenesisBlock().nBits, vaytria->GetConsensus()));
++    BOOST_CHECK_EQUAL(vaytria->GenesisBlock().nBits, bitcoin->GenesisBlock().nBits);
++    BOOST_CHECK(vaytria->GenesisBlock().vtx[0]->vout[0].scriptPubKey.IsUnspendable());
++    BOOST_CHECK(vaytria->DNSSeeds().empty());
++    BOOST_CHECK(vaytria->FixedSeeds().empty());
++    BOOST_CHECK(vaytria->GetAvailableSnapshotHeights().empty());
++    BOOST_CHECK(vaytria->GetConsensus().nMinimumChainWork.IsNull());
++    BOOST_CHECK(vaytria->GetConsensus().defaultAssumeValid.IsNull());
++    BOOST_CHECK(vaytria->GetConsensus().script_flag_exceptions.empty());
++    BOOST_CHECK(vaytria->GetConsensus().BIP34Hash.IsNull());
++    for (const auto& other : {CChainParams::Main(), CChainParams::TestNet(), CChainParams::TestNet4(), CChainParams::SigNet({}), CChainParams::RegTest({})}) {
++        BOOST_CHECK(vaytria->MessageStart() != other->MessageStart());
++        BOOST_CHECK(vaytria->GetDefaultPort() != other->GetDefaultPort());
++        BOOST_CHECK(vaytria->Bech32HRP() != other->Bech32HRP());
++    }
++    BOOST_CHECK(GetNetworkForMagic(vaytria->MessageStart()) == ChainType::VAYTRIA);
++}
++
++BOOST_AUTO_TEST_CASE(bitcoin_monetary_and_difficulty_rules)
++{
++    const auto vaytria = CChainParams::Vaytria();
++    const auto bitcoin = CChainParams::Main();
++    const auto& v = vaytria->GetConsensus();
++    const auto& b = bitcoin->GetConsensus();
++    BOOST_CHECK_EQUAL(v.nSubsidyHalvingInterval, 210000);
++    BOOST_CHECK_EQUAL(v.nPowTargetSpacing, 600);
++    BOOST_CHECK_EQUAL(v.nPowTargetTimespan, 14 * 24 * 60 * 60);
++    BOOST_CHECK(v.powLimit == b.powLimit);
++    BOOST_CHECK(!v.fPowAllowMinDifficultyBlocks);
++    BOOST_CHECK(!v.fPowNoRetargeting);
++    BOOST_CHECK_EQUAL(v.nPowTargetTimespan / v.nPowTargetSpacing, 2016);
++    CAmount issued{0};
++    for (int halving = 0; halving < 64; ++halving) {
++        const int height = halving * 210000;
++        const CAmount reward = GetBlockSubsidy(height, v);
++        BOOST_CHECK_EQUAL(reward, GetBlockSubsidy(height, b));
++        BOOST_CHECK_EQUAL(GetBlockSubsidy(height + 209999, v), reward);
++        issued += reward * 210000;
++        BOOST_CHECK(MoneyRange(issued));
++    }
++    BOOST_CHECK_EQUAL(issued, CAmount{2099999997690000});
++    BOOST_CHECK_EQUAL(GetBlockSubsidy(64 * 210000, v), 0);
++    BOOST_CHECK_EQUAL(MAX_MONEY, 21000000 * COIN);
++}
++
++BOOST_AUTO_TEST_CASE(addresses_and_default_chain_are_separate)
++{
++    ArgsManager args;
++    BOOST_CHECK(args.GetChainType() == ChainType::VAYTRIA);
++    BOOST_CHECK(ChainTypeFromString("vaytria") == ChainType::VAYTRIA);
++    BOOST_CHECK_EQUAL(CreateBaseChainParams(ChainType::VAYTRIA)->RPCPort(), 31443);
++    const std::string bitcoin_address{"1BoatSLRHtKNngkdXEeobR76b53LETtpyT"};
++    SelectParams(ChainType::MAIN);
++    const auto destination = DecodeDestination(bitcoin_address);
++    BOOST_REQUIRE(IsValidDestination(destination));
++    SelectParams(ChainType::VAYTRIA);
++    BOOST_CHECK(!IsValidDestinationString(bitcoin_address));
++    const auto vaytria_address = EncodeDestination(destination);
++    BOOST_CHECK(IsValidDestinationString(vaytria_address));
++    BOOST_CHECK(vaytria_address != bitcoin_address);
++    BOOST_CHECK_EQUAL(Params().Bech32HRP(), "vtr");
++    SelectParams(ChainType::MAIN);
++    BOOST_CHECK(!IsValidDestinationString(vaytria_address));
++}
++
++BOOST_AUTO_TEST_CASE(current_transaction_rules_are_active_from_start)
++{
++    const auto params = CChainParams::Vaytria();
++    const auto& c = params->GetConsensus();
++    BOOST_CHECK_EQUAL(c.BIP34Height, 1);
++    BOOST_CHECK_EQUAL(c.BIP65Height, 1);
++    BOOST_CHECK_EQUAL(c.BIP66Height, 1);
++    BOOST_CHECK_EQUAL(c.CSVHeight, 1);
++    BOOST_CHECK_EQUAL(c.SegwitHeight, 1);
++    BOOST_CHECK_EQUAL(c.vDeployments[Consensus::DEPLOYMENT_TAPROOT].nStartTime, Consensus::BIP9Deployment::ALWAYS_ACTIVE);
++}
++
++BOOST_AUTO_TEST_SUITE_END()
+diff --git a/src/util/chaintype.cpp b/src/util/chaintype.cpp
+index 5059ff7..d087763 100644
+--- a/src/util/chaintype.cpp
++++ b/src/util/chaintype.cpp
+@@ -11,6 +11,8 @@
+ std::string ChainTypeToString(ChainType chain)
+ {
+     switch (chain) {
++    case ChainType::VAYTRIA:
++        return "vaytria";
+     case ChainType::MAIN:
+         return "main";
+     case ChainType::TESTNET:
+@@ -27,7 +29,9 @@ std::string ChainTypeToString(ChainType chain)
+ 
+ std::optional<ChainType> ChainTypeFromString(std::string_view chain)
+ {
+-    if (chain == "main") {
++    if (chain == "vaytria") {
++        return ChainType::VAYTRIA;
++    } else if (chain == "main") {
+         return ChainType::MAIN;
+     } else if (chain == "test") {
+         return ChainType::TESTNET;
+diff --git a/src/util/chaintype.h b/src/util/chaintype.h
+index 3b246ea..45c69a5 100644
+--- a/src/util/chaintype.h
++++ b/src/util/chaintype.h
+@@ -14,6 +14,7 @@ enum class ChainType {
+     SIGNET,
+     REGTEST,
+     TESTNET4,
++    VAYTRIA,
+ };
+ 
+ std::string ChainTypeToString(ChainType chain);

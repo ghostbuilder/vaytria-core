@@ -1,0 +1,120 @@
+name: Build and check community software
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: community-build
+  cancel-in-progress: false
+jobs:
+  draft:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="build-${GITHUB_SHA:0:12}"
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" --draft --target "$GITHUB_SHA" --title "Experimental build ${GITHUB_SHA:0:12}" --notes 'Build staging only. Not a public network launch.'
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+  linux:
+    needs: draft
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y ninja-build pkg-config libevent-dev libboost-dev libsqlite3-dev
+      - name: Reconstruct qualified source
+        run: python3 scripts/prepare-source.py
+      - name: Configure and build
+        run: |
+          cmake -S core -B core/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_GUI=OFF -DENABLE_IPC=OFF -DWITH_ZMQ=OFF -DENABLE_WALLET=ON -DBUILD_TESTS=ON -DBUILD_BENCH=OFF
+          cmake --build core/build --parallel 2
+      - name: Unit suites and isolated wallet/miner checks
+        run: |
+          ctest --test-dir core/build --output-on-failure --parallel 2 --output-junit "$PWD/reports-unit.xml"
+          python3 scripts/test-client.py --daemon core/build/bin/bitcoind
+      - name: Package checked binaries
+        run: python3 scripts/package.py --platform linux-x86_64 --bin-dir core/build/bin
+      - name: Check extracted package startup without live mining
+        run: python3 scripts/smoke-package.py dist/vaytria-0.1.0-alpha-linux-x86_64.tar.gz
+      - name: Attach draft build assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_TAG: ${{ needs.draft.outputs.tag }}
+        run: |
+          cp reports/integration.json dist/integration-linux.json
+          cp reports-unit.xml dist/unit-linux.xml
+          gh release upload "$BUILD_TAG" dist/* --clobber
+  windows:
+    needs: draft
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Configure native Visual Studio environment
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsPath = & $vswhere -latest -version '[18.3,19.0)' -products '*' -property installationPath
+          if (-not $vsPath) { throw 'Visual Studio 2026 18.3+ is required.' }
+          Import-Module "$vsPath\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
+          Enter-VsDevShell -VsInstallPath $vsPath -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
+          "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
+          'SOURCE_DATE_EPOCH=1792540800' >> $env:GITHUB_ENV
+          Get-ChildItem Env: | Where-Object { $_.Name -in @('PATH','INCLUDE','LIB','LIBPATH','VSCMD_ARG_TGT_ARCH','VCToolsInstallDir','VSINSTALLDIR','WindowsSdkDir','WindowsSDKVersion') } | ForEach-Object { "$($_.Name)=$($_.Value)" >> $env:GITHUB_ENV }
+      - name: Reconstruct qualified source
+        run: python scripts/prepare-source.py
+      - name: Configure and build native Windows binaries
+        run: |
+          cmake -S core -B core/build --preset vs2026-static -DBUILD_GUI=OFF -DENABLE_IPC=OFF -DWITH_ZMQ=OFF -DENABLE_WALLET=ON -DBUILD_TESTS=ON -DBUILD_BENCH=OFF -DVCPKG_MANIFEST_NO_DEFAULT_FEATURES=ON '-DVCPKG_MANIFEST_FEATURES=wallet;tests'
+          if ($LASTEXITCODE -ne 0) { throw 'Configure failed' }
+          cmake --build core/build --config Release --parallel 2
+          if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
+      - name: Unit suites and isolated wallet/miner checks
+        run: |
+          ctest --test-dir core/build --build-config Release --output-on-failure --parallel 2 --output-junit "$env:GITHUB_WORKSPACE/reports-unit.xml"
+          if ($LASTEXITCODE -ne 0) { throw 'Unit checks failed' }
+          python scripts/test-client.py --daemon core/build/bin/Release/bitcoind.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Wallet/miner checks failed' }
+      - name: Bundle native menu client and checked binaries
+        run: |
+          python -m pip install pyinstaller==6.22.3
+          if ($LASTEXITCODE -ne 0) { throw 'Client build dependency failed' }
+          python -m PyInstaller --clean --noconfirm --onefile --name vaytria --distpath frozen client/vaytria.py
+          if ($LASTEXITCODE -ne 0) { throw 'Client build failed' }
+          python scripts/package.py --platform win64 --bin-dir core/build/bin/Release --frozen-client frozen/vaytria.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Package check failed' }
+      - name: Check extracted native package startup without live mining
+        run: |
+          python scripts/smoke-package.py dist/vaytria-0.1.0-alpha-win64.zip
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged startup check failed' }
+      - name: Attach draft build assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_TAG: ${{ needs.draft.outputs.tag }}
+        run: |
+          Copy-Item reports/integration.json dist/integration-win64.json
+          Copy-Item reports-unit.xml dist/unit-win64.xml
+          gh release upload $env:BUILD_TAG dist/* --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'Draft upload failed' }

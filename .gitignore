@@ -1,0 +1,9 @@
+core/
+dist/
+frozen/
+build/
+reports/
+__pycache__/
+*.pyc
+*.spec
+*.log
