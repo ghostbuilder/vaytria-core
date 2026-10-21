@@ -67,7 +67,8 @@ class Client:
             raise RPCError('Daemon checksum differs from the package manifest. Refusing to execute it.')
         self.datadir.mkdir(parents=True, exist_ok=True, mode=0o700)
         arguments = [str(binary), '-chain=vaytria', '-datadir=' + str(self.datadir),
-            '-server=1', '-listen=0', '-dnsseed=0', '-fixedseeds=0', '-discover=0', '-listenonion=0',
+            '-server=1', '-listen=1', '-bind=127.0.0.1:31444', '-port=31444',
+            '-dnsseed=0', '-fixedseeds=0', '-discover=0', '-listenonion=0',
             '-dbcache=128', '-par=1', '-rpcthreads=4', '-fallbackfee=0.0002',
             '-rpcbind=127.0.0.1', '-rpcallowip=127.0.0.1', '-rpcport=' + str(self.port)]
         arguments += ['-addnode=' + peer for peer in peers]

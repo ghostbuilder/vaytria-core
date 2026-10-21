@@ -44,8 +44,9 @@ python3 vaytria.py mine YOUR_OWN_RECEIVING_ADDRESS --seconds 1800 --workers 1
 python3 vaytria.py stop
 ```
 
-The wallet node listens for RPC on loopback only and does not expose inbound
-P2P by default. An ordinary miner need not operate a publicly listening server.
+The wallet node binds both RPC and its P2P listener to loopback only. It does
+not expose a public inbound P2P port. An ordinary miner need not operate a
+publicly listening server.
 The mining client requires a connected public IP peer, uses the native block
 assembler for transactions/fees and schedules at most four bounded hashing RPCs.
 Time limits stop new work and drain in-flight requests. Ctrl+C does the same.

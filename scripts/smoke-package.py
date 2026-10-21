@@ -35,6 +35,10 @@ def main():
         started = False
         try:
             result = subprocess.run(command + ['start'], capture_output=True, text=True, timeout=90)
+            if result.returncode:
+                log = base / 'data/node.log'
+                if log.exists():
+                    print('\n'.join(log.read_text(errors='replace').splitlines()[-40:]), file=sys.stderr)
             assert result.returncode == 0, result.stderr
             assert json.loads(result.stdout)['running']
             started = True
