@@ -4,7 +4,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: community-build
+  group: community-build-${{ github.sha }}
   cancel-in-progress: false
 jobs:
   draft:
@@ -43,7 +43,7 @@ jobs:
       - name: Configure and build
         run: |
           cmake -S core -B core/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_GUI=OFF -DENABLE_IPC=OFF -DWITH_ZMQ=OFF -DENABLE_WALLET=ON -DBUILD_TESTS=ON -DBUILD_BENCH=OFF
-          cmake --build core/build --parallel 2
+          cmake --build core/build --parallel 4
       - name: Unit suites and isolated wallet/miner checks
         run: |
           ctest --test-dir core/build --output-on-failure --parallel 2 --output-junit "$PWD/reports-unit.xml"
@@ -89,7 +89,7 @@ jobs:
         run: |
           cmake -S core -B core/build --preset vs2026-static -DBUILD_GUI=OFF -DENABLE_IPC=OFF -DWITH_ZMQ=OFF -DENABLE_WALLET=ON -DBUILD_TESTS=ON -DBUILD_BENCH=OFF -DVCPKG_MANIFEST_NO_DEFAULT_FEATURES=ON '-DVCPKG_MANIFEST_FEATURES=wallet;tests'
           if ($LASTEXITCODE -ne 0) { throw 'Configure failed' }
-          cmake --build core/build --config Release --parallel 2
+          cmake --build core/build --config Release --parallel 4
           if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
       - name: Unit suites and isolated wallet/miner checks
         run: |
