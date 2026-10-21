@@ -51,7 +51,7 @@ jobs:
       - name: Package checked binaries
         run: python3 scripts/package.py --platform linux-x86_64 --bin-dir core/build/bin
       - name: Check extracted package startup without live mining
-        run: python3 scripts/smoke-package.py dist/vaytria-0.1.0-alpha-linux-x86_64.tar.gz
+        run: python3 scripts/smoke-package.py dist/vaytria-0.1.1-alpha-linux-x86_64.tar.gz
       - name: Attach draft build assets
         env:
           GH_TOKEN: ${{ github.token }}
@@ -86,6 +86,7 @@ jobs:
       - name: Reconstruct qualified source
         run: python scripts/prepare-source.py
       - name: Configure and build native Windows binaries
+        id: native_build
         run: |
           cmake -S core -B core/build --preset vs2026-static -DBUILD_GUI=OFF -DENABLE_IPC=OFF -DWITH_ZMQ=OFF -DENABLE_WALLET=ON -DBUILD_TESTS=ON -DBUILD_BENCH=OFF -DVCPKG_MANIFEST_NO_DEFAULT_FEATURES=ON '-DVCPKG_MANIFEST_FEATURES=wallet;tests'
           if ($LASTEXITCODE -ne 0) { throw 'Configure failed' }
@@ -97,6 +98,22 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Unit checks failed' }
           python scripts/test-client.py --daemon core/build/bin/Release/bitcoind.exe
           if ($LASTEXITCODE -ne 0) { throw 'Wallet/miner checks failed' }
+      - name: Retain private diagnostic binaries after a successful compilation
+        if: ${{ always() && steps.native_build.outcome == 'success' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_TAG: ${{ needs.draft.outputs.tag }}
+        run: |
+          New-Item -ItemType Directory diagnostics/raw -Force | Out-Null
+          foreach ($name in @('bitcoind.exe', 'bitcoin-cli.exe', 'test_bitcoin.exe')) {
+            Copy-Item "core/build/bin/Release/$name" diagnostics/raw/
+          }
+          Copy-Item COPYING,network/source.patch,network/identity.json,network/genesis.json diagnostics/raw/
+          if (Test-Path reports-unit.xml) { Copy-Item reports-unit.xml diagnostics/raw/ }
+          @{ repositoryCommit=$env:GITHUB_SHA; diagnosticOnly=$true; publicPackageQualified=$false; sourcePatchSHA256=(Get-FileHash network/source.patch).Hash.ToLowerInvariant() } | ConvertTo-Json | Set-Content diagnostics/raw/diagnostic.json
+          Compress-Archive -Path diagnostics/raw/* -DestinationPath diagnostics/raw-win64.zip
+          gh release upload $env:BUILD_TAG diagnostics/raw-win64.zip --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'Private diagnostic upload failed' }
       - name: Bundle native menu client and checked binaries
         run: |
           python -m pip install pyinstaller==6.22.3
@@ -107,7 +124,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Package check failed' }
       - name: Check extracted native package startup without live mining
         run: |
-          python scripts/smoke-package.py dist/vaytria-0.1.0-alpha-win64.zip
+          python scripts/smoke-package.py dist/vaytria-0.1.1-alpha-win64.zip
           if ($LASTEXITCODE -ne 0) { throw 'Packaged startup check failed' }
       - name: Attach draft build assets
         env:

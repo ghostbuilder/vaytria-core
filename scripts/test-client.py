@@ -102,7 +102,10 @@ def main():
             checks.append('two cookie-authenticated local nodes and encrypted wallet creation verified')
             miner_address = miner.rpc('getnewaddress', wallet=True)
             buyer_address = buyer.rpc('getnewaddress', wallet=True)
-            miner.rpc('generatetoaddress', [101, miner_address])
+            # Match the real miner's one-block RPCs. Slow durable Windows writes
+            # must not turn a bulk fixture into an unrelated 30-second timeout.
+            for _ in range(101):
+                assert len(miner.rpc('generatetoaddress', [1, miner_address])) == 1
             wait_for(lambda: buyer.rpc('getblockcount') == 101)
             miner.rpc('walletpassphrase', [secret, 30], wallet=True)
             txid = miner.rpc('sendtoaddress', [buyer_address, '1.25'], wallet=True)
