@@ -4,6 +4,10 @@ No registration, founder approval or payment to the project is needed. Release
 availability does not establish an active public network. The bootstrap peer
 list is empty until independent operators publish endpoints.
 
+Want to host the first community relay? Start with
+[Host an independent node](FIRST-NODE.md). A relay can start at height zero
+without existing peers; mining through the client still needs a connected peer.
+
 ## Verify the package
 
 Check the downloaded archive's SHA-256 against the release checksums. Extract
@@ -47,6 +51,10 @@ python3 vaytria.py stop
 The wallet node binds both RPC and its P2P listener to loopback only. It does
 not expose a public inbound P2P port. An ordinary miner need not operate a
 publicly listening server.
+Its direct outbound connections still reveal the miner's source IP to peers.
+If hiding your home IP is required, keep the ordinary profile stopped until a
+compatible privacy connection is configured and verified. A loopback listener
+alone does not provide IP anonymity.
 The mining client requires a connected public IP peer, uses the native block
 assembler for transactions/fees and schedules at most four bounded hashing RPCs.
 Time limits stop new work and drain in-flight requests. Ctrl+C does the same.

@@ -16,6 +16,9 @@ volunteers may fork, audit, build and run it under the license.
   binaries are attached only after their automated build and checks pass.
 - [Build from source](BUILD.md): pinned upstream source plus the included patch.
 - [Run a node or mine](RUNNING.md): local wallet, public relay and CPU mining.
+- [Host an independent node](FIRST-NODE.md): start a wallet-disabled Windows or
+  Linux relay and optionally share your own public P2P endpoint. We are seeking
+  the first persistent community operators; no current bootstrap peer is supplied.
 - [Community handoff](HANDOFF.md): public peer coordination and maintenance.
 - [Security toolkit](SECURITY.md): offline signing, multisig checks, authenticated build verification and local monitoring.
 - [Website](https://vaytria.com/participate.html).
