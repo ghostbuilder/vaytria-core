@@ -1,0 +1,41 @@
+name: Check an operator-approved public Vaytria peer
+on:
+  workflow_dispatch:
+    inputs:
+      host:
+        description: Public IPv4 of your own Vaytria node, or one you have permission to check
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: public-peer-check
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Check bounded protocol handling with offline fixtures
+        run: python scripts/test-peer-check.py -v
+      - name: One normal handshake on Vaytria P2P TCP 31444
+        env:
+          VAYTRIA_CHECK_HOST: ${{ inputs.host }}
+        run: |
+          echo "::add-mask::$VAYTRIA_CHECK_HOST"
+          python client/peer_check.py --host "$VAYTRIA_CHECK_HOST"
+      - name: Record limited scope of the check
+        if: always()
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          report = Path('reports/public-peer.json')
+          if report.exists():
+              with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+                  summary.write('### One-shot P2P check\n\n```json\n' + report.read_text() + '```\n\n')
+                  summary.write('No daemon, wallet, mining, transaction relay or persistent peer was started. This does not qualify a sustained public network.\n')
+          PY
