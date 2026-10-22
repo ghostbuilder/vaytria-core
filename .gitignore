@@ -3,6 +3,7 @@ dist/
 frozen/
 build/
 reports/
+downloads/
 __pycache__/
 *.pyc
 *.spec

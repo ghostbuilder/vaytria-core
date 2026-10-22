@@ -17,6 +17,7 @@ volunteers may fork, audit, build and run it under the license.
 - [Build from source](BUILD.md): pinned upstream source plus the included patch.
 - [Run a node or mine](RUNNING.md): local wallet, public relay and CPU mining.
 - [Community handoff](HANDOFF.md): public peer coordination and maintenance.
+- [Security toolkit](SECURITY.md): offline signing, multisig checks, authenticated build verification and local monitoring.
 - [Website](https://vaytria.com/participate.html).
 
 Windows packages use native executables; WSL is not required. The packaged menu

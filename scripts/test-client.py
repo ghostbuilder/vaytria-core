@@ -39,6 +39,7 @@ def wait_for(condition, timeout=45):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--daemon', required=True)
+    parser.add_argument('--security', action='store_true')
     args = parser.parse_args()
     daemon = Path(args.daemon).resolve()
     checks = []
@@ -144,6 +145,11 @@ def main():
             miner.rpc('generatetoaddress', [1, miner_address])
             wait_for(lambda: buyer.rpc('gettransaction', [returned], wallet=True)['confirmations'] > 0)
             checks.append('actual CLI returns payment, confirms and relocks the encrypted wallet')
+            if args.security:
+                security_spec = importlib.util.spec_from_file_location('security_integration', ROOT / 'scripts/security-integration.py')
+                security_module = importlib.util.module_from_spec(security_spec)
+                security_spec.loader.exec_module(security_module)
+                checks.extend(security_module.run(miner, buyer, secret))
             wrong = module.Client(buyer.datadir, buyer.port, chain='regtest')
             try: wrong.verify()
             except module.RPCError: checks.append('wrong genesis rejected before wallet operations')
@@ -163,6 +169,8 @@ def main():
         'clientSHA256': hashlib.sha256((ROOT / 'client/vaytria.py').read_bytes()).hexdigest(),
         'daemonSHA256': hashlib.sha256(daemon.read_bytes()).hexdigest(), 'checks': checks,
         'scope': 'Two isolated loopback regtest nodes only. No live-coin mining, public peers, buyers or market.'}
+    if args.security:
+        report['securityToolSHA256'] = hashlib.sha256((ROOT / 'client/security.py').read_bytes()).hexdigest()
     (reports / 'integration.json').write_text(json.dumps(report, indent=2) + '\n')
     print(json.dumps(report, indent=2))
 

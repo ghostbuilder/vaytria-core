@@ -1,0 +1,37 @@
+groups:
+  - name: vaytria-local-observer
+    rules:
+      - alert: VaytriaNodeUnavailable
+        expr: vaytria_up == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Vaytria observer cannot verify its local node
+      - alert: VaytriaObserverStale
+        expr: time() - vaytria_observed_at_seconds > 300
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: Vaytria observation is stale
+      - alert: VaytriaObserverMissing
+        expr: absent(vaytria_observed_at_seconds)
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Vaytria metrics are missing
+      - alert: VaytriaReorganizationObserved
+        expr: vaytria_reorg_observed == 1
+        labels:
+          severity: warning
+        annotations:
+          summary: Vaytria former tip no longer active or cannot be verified; investigate
+      - alert: VaytriaNoPeers
+        expr: vaytria_peers == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Vaytria node has no connected peers

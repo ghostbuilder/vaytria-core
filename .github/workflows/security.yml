@@ -1,0 +1,82 @@
+name: Check and attest security toolkit
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: security-${{ github.sha }}
+  cancel-in-progress: false
+jobs:
+  checks:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux-x86_64
+            archive: vaytria-0.1.2-alpha-linux-x86_64.tar.gz
+          - os: windows-2025-vs2026
+            platform: win64
+            archive: vaytria-0.1.2-alpha-win64.zip
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Offline security-tool tests
+        run: |
+          python scripts/test-security.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Offline checks failed' }
+      - name: Download exact previously qualified daemon package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download v0.1.2-alpha --pattern '${{ matrix.archive }}' --dir downloads
+          if ($LASTEXITCODE -ne 0) { throw 'Legacy package download failed' }
+      - name: Verify package and exercise offline multisig using temporary regtest wallets
+        run: |
+          python scripts/security-ci.py --platform '${{ matrix.platform }}'
+          if ($LASTEXITCODE -ne 0) { throw 'Isolated signing checks failed' }
+      - name: Freeze native Windows security client
+        if: runner.os == 'Windows'
+        run: |
+          python -m pip install pyinstaller==6.22.3
+          if ($LASTEXITCODE -ne 0) { throw 'Client dependency failed' }
+          python -m PyInstaller --clean --noconfirm --onefile --name vaytria-security --paths client --distpath frozen client/security.py
+          if ($LASTEXITCODE -ne 0) { throw 'Security client compilation failed' }
+      - name: Package separate toolkit with matching test evidence
+        run: |
+          python scripts/package-security.py --platform '${{ matrix.platform }}'
+          if ($LASTEXITCODE -ne 0) { throw 'Toolkit packaging failed' }
+      - name: Attest toolkit provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        with:
+          subject-path: dist/*.zip
+      - name: Verify attestation before uploading
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $archive = Get-ChildItem dist/*.zip | Select-Object -First 1
+          gh attestation verify $archive.FullName --repo ghostbuilder/vaytria-core --signer-workflow ghostbuilder/vaytria-core/.github/workflows/security.yml --source-digest $env:GITHUB_SHA --deny-self-hosted-runners
+          if ($LASTEXITCODE -ne 0) { throw 'Provenance verification failed' }
+      - name: Attach checked toolkit to private build draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = 'security-build-' + $env:GITHUB_SHA.Substring(0,12) + '-${{ matrix.platform }}'
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag --draft --target $env:GITHUB_SHA --title 'Security toolkit staging' --notes 'Staging only; temporary regtest checks and build provenance are not an independent audit.'
+            if ($LASTEXITCODE -ne 0) { throw 'Draft creation failed' }
+          }
+          Copy-Item reports/integration.json 'dist/security-checks-${{ matrix.platform }}.json'
+          gh release upload $tag dist/* --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'Draft upload failed' }
