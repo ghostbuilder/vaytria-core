@@ -1,7 +1,13 @@
 """Offline response-fixture checks; no external connection or coin daemon."""
 import importlib.util
+import io
+import json
+import os
 from pathlib import Path
 import struct
+import subprocess
+import textwrap
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -83,6 +89,38 @@ class PeerCheckTests(unittest.TestCase):
                      peer.frame(MAGIC, b'verack') + peer.frame(MAGIC, b'pong', b'xxxxxxxx'))
         result, _ = self.probe(responses)
         self.assertFalse(result['pingPongVerified'])
+
+    def workflow_snippet(self):
+        workflow = (Path(__file__).resolve().parents[1] / '.github/workflows/public-peer-check.yml').read_text()
+        self.assertNotIn('VAYTRIA_CHECK_HOST:', workflow)
+        section = workflow.split('- name: One normal handshake', 1)[1].split('- name: Record limited scope', 1)[0]
+        return textwrap.dedent(section.split("python - <<'PY'", 1)[1].split('\n          PY', 1)[0])
+
+    def test_workflow_masks_target_before_starting_check(self):
+        snippet = self.workflow_snippet()
+        output = io.StringIO()
+
+        def fake_run(arguments):
+            self.assertEqual(output.getvalue(), '::add-mask::203.0.113.10\n')
+            self.assertEqual(arguments[-2:], ['--host', '203.0.113.10'])
+            return SimpleNamespace(returncode=0)
+
+        with patch.dict(os.environ, {'GITHUB_EVENT_PATH': 'offline-fixture.json'}), patch.object(Path, 'read_text', return_value=json.dumps({'inputs': {'host': '203.0.113.10'}})), patch.object(subprocess, 'run', side_effect=fake_run) as run, patch('sys.stdout', output):
+            with self.assertRaises(SystemExit) as result:
+                exec(compile(snippet, '<workflow-fixture>', 'exec'), {})
+        self.assertEqual(result.exception.code, 0)
+        run.assert_called_once()
+
+    def test_workflow_masks_and_rejects_invalid_input_without_connection(self):
+        snippet = self.workflow_snippet()
+        supplied = 'not-an-ip\n::notice::example%value'
+        output = io.StringIO()
+        with patch.dict(os.environ, {'GITHUB_EVENT_PATH': 'offline-fixture.json'}), patch.object(Path, 'read_text', return_value=json.dumps({'inputs': {'host': supplied}})), patch.object(subprocess, 'run') as run, patch('sys.stdout', output):
+            with self.assertRaises(SystemExit) as result:
+                exec(compile(snippet, '<workflow-fixture>', 'exec'), {})
+        self.assertEqual(result.exception.code, 'A public IPv4 address is required')
+        self.assertEqual(output.getvalue(), '::add-mask::not-an-ip%0A::notice::example%25value\n')
+        run.assert_not_called()
 
 
 if __name__ == '__main__':

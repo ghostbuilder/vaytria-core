@@ -22,11 +22,27 @@ jobs:
       - name: Check bounded protocol handling with offline fixtures
         run: python scripts/test-peer-check.py -v
       - name: One normal handshake on Vaytria P2P TCP 31444
-        env:
-          VAYTRIA_CHECK_HOST: ${{ inputs.host }}
         run: |
-          echo "::add-mask::$VAYTRIA_CHECK_HOST"
-          python client/peer_check.py --host "$VAYTRIA_CHECK_HOST"
+          python - <<'PY'
+          import ipaddress
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+          import sys
+          event = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())
+          supplied = event.get('inputs', {}).get('host', '')
+          if not isinstance(supplied, str):
+              raise SystemExit('A public IPv4 address is required')
+          masked = supplied.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+          print('::add-mask::' + masked, flush=True)
+          try:
+              host = str(ipaddress.IPv4Address(supplied))
+          except ValueError:
+              raise SystemExit('A public IPv4 address is required') from None
+          result = subprocess.run([sys.executable, 'client/peer_check.py', '--host', host])
+          raise SystemExit(result.returncode)
+          PY
       - name: Record limited scope of the check
         if: always()
         run: |
