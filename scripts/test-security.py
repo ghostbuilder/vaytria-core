@@ -96,6 +96,17 @@ class SecurityTests(unittest.TestCase):
         self.assertEqual(self.client.calls[-1], 'walletlock')
         self.assertFalse((self.root / 'out').exists())
 
+    def test_unencrypted_unlocked_and_watch_only_signers_refused(self):
+        for wallet in ({'private_keys_enabled': True},
+                       {'private_keys_enabled': True, 'unlocked_until': 100},
+                       {'private_keys_enabled': False, 'unlocked_until': 0}):
+            original = self.client.rpc
+            with patch.object(self.client, 'rpc', side_effect=lambda method, params=None, wallet=False, info=wallet:
+                              info if method == 'getwalletinfo' else original(method, params, wallet)):
+                review = security.review_psbt(self.client, 'fixture')['reviewSHA256']
+                with self.assertRaises(security.RPCError): security.sign_psbt(self.client, 'fixture', self.root / 'out', review)
+        self.assertNotIn('walletpassphrase', self.client.calls)
+
     def test_sign_never_broadcasts_or_overwrites(self):
         out = self.root / 'out'
         with patch.object(security.getpass, 'getpass', return_value='fake-regtest-only'):

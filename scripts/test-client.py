@@ -86,7 +86,13 @@ def main():
                         '-fallbackfee=0.0002'], stdout=log, stderr=log))
                 client = module.Client(data, rpc, 'regtest', REGTEST, name)
                 clients.append(client)
-                wait_for(lambda: client.rpc('getblockcount') == 0)
+                try:
+                    wait_for(lambda: client.rpc('getblockcount') == 0)
+                except RuntimeError:
+                    # Startup precedes any wallet creation, so this log cannot
+                    # contain signing secrets or fixture wallet contents.
+                    print((data / 'node.log').read_text(errors='replace')[-6000:], file=sys.stderr)
+                    raise
                 client.verify()
             miner, buyer = clients
             buyer.rpc('addnode', ['127.0.0.1:18444', 'onetry'])

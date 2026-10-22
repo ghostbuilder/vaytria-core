@@ -41,6 +41,10 @@ jobs:
         run: |
           gh release download v0.1.2-alpha --pattern '${{ matrix.archive }}' --dir downloads
           if ($LASTEXITCODE -ne 0) { throw 'Legacy package download failed' }
+      - name: Install Linux daemon runtime dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: sudo apt-get update && sudo apt-get install -y libevent-dev libsqlite3-0
       - name: Verify package and exercise offline multisig using temporary regtest wallets
         run: |
           python scripts/security-ci.py --platform '${{ matrix.platform }}'

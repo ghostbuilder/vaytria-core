@@ -3,6 +3,7 @@ import importlib.util
 from pathlib import Path
 import sys
 import tempfile
+import time
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'client'))
@@ -39,6 +40,9 @@ def run(miner, buyer, secret):
     assert not watch.rpc('walletprocesspsbt', [psbt, True, 'ALL', True, False], wallet=True)['complete']
     checks.append('watch-only wallet constructs 2-of-3 payment but cannot sign it')
     miner.rpc('setnetworkactive', [False])
+    deadline = time.monotonic() + 15
+    while miner.rpc('getnetworkinfo')['connections'] and time.monotonic() < deadline:
+        time.sleep(0.1)
     assert miner.rpc('getnetworkinfo')['connections'] == 0
     original = security.getpass.getpass
     try:
